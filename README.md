@@ -1,2 +1,1 @@
-# VBIS
-Veb Bazirani Informacioni Sistemi
+# vbis-2024
