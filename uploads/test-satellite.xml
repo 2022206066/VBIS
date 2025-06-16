@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<satellites>
+  <satellite>
+    <id>1</id>
+    <name><![CDATA[ISS (ZARYA)]]></name>
+    <line1><![CDATA[1 25544U 98067A   20130.40187346  .00000892  00000-0  24043-4 0  9995]]></line1>
+    <line2><![CDATA[2 25544  51.6445 180.4320 0001102 260.4037 190.9963 15.49359311226009]]></line2>
+    <category><![CDATA[Space Station]]></category>
+    <added_by>1</added_by>
+  </satellite>
+</satellites>
