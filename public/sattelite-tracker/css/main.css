@@ -1,0 +1,165 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-family: Arial, sans-serif;
+}
+
+.container {
+  min-height: 100%;
+  width: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(45deg, #667eea, #764ba2);
+}
+
+.map {
+  height: 100%;
+  width: 100%;
+}
+
+/* Styles for popup information */
+.ol-popup {
+  position: absolute;
+  background-color: white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  padding: 15px;
+  border-radius: 10px;
+  border: 1px solid #cccccc;
+  bottom: 12px;
+  left: -50px;
+  min-width: 200px;
+}
+
+.ol-popup:after, .ol-popup:before {
+  top: 100%;
+  border: solid transparent;
+  content: " ";
+  height: 0;
+  width: 0;
+  position: absolute;
+  pointer-events: none;
+}
+
+.ol-popup:after {
+  border-top-color: white;
+  border-width: 10px;
+  left: 48px;
+  margin-left: -10px;
+}
+
+.ol-popup:before {
+  border-top-color: #cccccc;
+  border-width: 11px;
+  left: 48px;
+  margin-left: -11px;
+}
+
+.ol-popup-closer {
+  text-decoration: none;
+  position: absolute;
+  top: 2px;
+  right: 8px;
+}
+
+.ol-popup-closer:after {
+  content: "✖";
+}
+
+/* Satellite marker styling */
+.satellite-marker {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: red;
+  border: 2px solid white;
+  box-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+
+.container-fluid {
+  height: 100vh;
+  padding: 0;
+}
+
+.row {
+  height: 100%;
+  margin: 0;
+}
+
+.controls {
+  height: 100%;
+  overflow-y: auto;
+  background-color: #f8f9fa;
+  border-left: 1px solid #dee2e6;
+  padding: 15px;
+}
+
+.controls h4 {
+  margin-bottom: 20px;
+  color: #343a40;
+}
+
+.text-muted {
+  color: #6c757d;
+}
+
+.btn {
+  margin-right: 5px;
+  margin-bottom: 10px;
+}
+
+#selected-satellite-info {
+  background-color: #e9ecef;
+  padding: 10px;
+  border-radius: 5px;
+  margin-top: 5px;
+}
+
+/* Category colors */
+.satellite-Weather {
+  fill: #4bc0c0;
+  stroke: #2a9d9d;
+}
+
+.satellite-Navigation {
+  fill: #ff9f40;
+  stroke: #d27b2c;
+}
+
+.satellite-Communication {
+  fill: #36a2eb;
+  stroke: #2384c6;
+}
+
+.satellite-Earth-Observation {
+  fill: #9966ff;
+  stroke: #7a4fd1;
+}
+
+.satellite-Space-Station {
+  fill: #ff6384;
+  stroke: #d14b67;
+}
+
+.satellite-Scientific {
+  fill: #ffcd56;
+  stroke: #d1a93e;
+}
+
+.satellite-Military {
+  fill: #4d5360;
+  stroke: #2e323a;
+}
+
+.satellite-Amateur {
+  fill: #7ccc63;
+  stroke: #5ea847;
+}
+
+.satellite-Unknown {
+  fill: #c9cbcf;
+  stroke: #9a9da3;
+}

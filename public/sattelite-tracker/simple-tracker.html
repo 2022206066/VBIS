@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Satellite Tracker</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <!-- Direct static OpenLayers CSS -->
+    <link rel="stylesheet" href="../assets/libs/openlayers/ol.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/ol@v7.3.0/ol.css';">
+    
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        #debug {
+            padding: 10px;
+            font-family: monospace;
+            background-color: #f5f5f5;
+            border: 1px solid #ccc;
+            height: 0;
+            overflow: hidden;
+            display: none;
+        }
+        .info {
+            color: #0066cc;
+        }
+        .error {
+            color: #cc0000;
+        }
+        .success {
+            color: #006600;
+        }
+    </style>
+    
+    <!-- Define loadScriptFallbacks early so it's available for onerror handlers -->
+    <script>
+        // Fallback loading if direct script tags fail
+        function loadScriptFallbacks() {
+            console.log('Using fallback script loading');
+            
+            // Load script with fallback
+            function loadScript(src, fallback, callback) {
+                var script = document.createElement('script');
+                script.src = src;
+                script.onload = function() {
+                    console.log('Loaded: ' + src);
+                    if (callback) callback();
+                };
+                script.onerror = function() {
+                    console.log('Failed to load: ' + src + ', trying fallback');
+                    var fallbackScript = document.createElement('script');
+                    fallbackScript.src = fallback;
+                    fallbackScript.onload = function() {
+                        console.log('Loaded fallback: ' + fallback);
+                        if (callback) callback();
+                    };
+                    fallbackScript.onerror = function() {
+                        console.error('Both primary and fallback script loading failed');
+                        if (callback) callback(new Error('Failed to load script'));
+                    };
+                    document.head.appendChild(fallbackScript);
+                };
+                document.head.appendChild(script);
+            }
+            
+            if (!checkOL()) {
+                // Try CDN fallbacks for OpenLayers
+                loadScript('https://cdn.jsdelivr.net/npm/ol@v7.3.0/dist/ol.js', 
+                          'https://unpkg.com/ol@7.3.0/dist/ol.js', 
+                          function() {
+                              checkOL();
+                          });
+            }
+            
+            if (!checkSatelliteJs()) {
+                // Try fallbacks for satellite.js
+                loadScript('https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js',
+                          'https://unpkg.com/satellite.js@5.0.0/dist/satellite.min.js',
+                          function() {
+                              checkSatelliteJs();
+                          });
+            }
+        }
+    </script>
+    
+    <!-- Direct script loading for faster performance -->
+    <script src="../assets/libs/openlayers/ol.js" onerror="this.onerror=null;loadScriptFallbacks();"></script>
+    <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="debug">
+        <div>Initializing... Please wait.</div>
+    </div>
+    
+    <script>
+        // Global variables for libraries
+        var olLoaded = false;
+        var satelliteJsLoaded = false;
+        
+        // Check if OpenLayers loaded
+        function checkOL() {
+            try {
+                if (typeof ol !== 'undefined') {
+                    console.log('OpenLayers loaded directly');
+                    olLoaded = true;
+                    initializeIfReady();
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+        
+        // Check if satellite.js loaded
+        function checkSatelliteJs() {
+            try {
+                if (typeof satellite !== 'undefined') {
+                    console.log('satellite.js loaded directly');
+                    satelliteJsLoaded = true;
+                    initializeIfReady();
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+        
+        // Initialize if both libraries are ready
+        function initializeIfReady() {
+            if (olLoaded && satelliteJsLoaded) {
+                console.log('Both libraries loaded, initializing tracker');
+                initializeTracker();
+            }
+        }
+        
+        // Run initial checks after page load
+        window.onload = function() {
+            checkOL();
+            checkSatelliteJs();
+            
+            // If libraries not detected, try fallbacks
+            if (!olLoaded || !satelliteJsLoaded) {
+                loadScriptFallbacks();
+            }
+        };
+    </script>
+    
+    <script>
+        // Debug logging function
+        function log(message, type) {
+            const debugEl = document.getElementById('debug');
+            const div = document.createElement('div');
+            div.className = type || 'info';
+            div.textContent = message;
+            debugEl.appendChild(div);
+            console.log(message);
+            
+            // Send log to parent window for debugging
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'log',
+                        message: message,
+                        logType: type || 'info'
+                    }, '*');
+                }
+            } catch (e) {
+                console.error('Error sending log to parent:', e);
+            }
+            
+            // Scroll to bottom
+            debugEl.scrollTop = debugEl.scrollHeight;
+        }
+        
+        // Global variables
+        let mapObj = null; // Changed from map to mapObj to avoid confusion
+        let satelliteFeature, pathFeature, vectorSource;
+        let satelliteData = null;
+        let updateInterval;
+        let mapInitialized = false;
+        
+        // Listen for messages from parent
+        window.addEventListener('message', function(event) {
+            console.log("Received message from parent:", event.data);
+            try {
+                // Check if the data has the satellite format (name, line1, line2)
+                if (event.data && event.data.name && event.data.line1 && event.data.line2) {
+                    log(`Received satellite data for: ${event.data.name}`, 'info');
+                    satelliteData = event.data;
+                    
+                    // Debug the satelliteData variable to ensure it's set correctly
+                    console.log("satelliteData set to:", JSON.stringify(satelliteData));
+                    
+                    if (mapObj && mapInitialized) {
+                        log("Map ready, starting tracking", 'info');
+                        startTracking();
+                    } else if (olLoaded && satelliteJsLoaded) {
+                        log("Libraries loaded but map not initialized, initializing now", 'info');
+                        initMap();
+                        startTracking();
+                    } else {
+                        log('Libraries not fully loaded yet, will track when ready', 'info');
+                    }
+                } else {
+                    log('Received message but not valid satellite data', 'info');
+                    console.log('Invalid data format:', event.data);
+                }
+            } catch (error) {
+                log(`Error processing message: ${error.message}`, 'error');
+                console.error('Error processing message:', error);
+            }
+        });
+        
+        // Public API for parent window integration
+        window.trackerAPI = {
+            loadSatellite: function(data) {
+                try {
+                    log(`API: Loading satellite: ${data.name}`, 'info');
+                    console.log("trackerAPI.loadSatellite called with:", data);
+                    
+                    satelliteData = data;
+                    console.log("satelliteData set to:", JSON.stringify(satelliteData));
+                    
+                    if (mapObj && mapInitialized) {
+                        log("API: Map ready, starting tracking", 'info');
+                        startTracking();
+                    } else if (olLoaded && satelliteJsLoaded) {
+                        log("API: Libraries loaded but map not initialized, initializing now", 'info');
+                        initMap();
+                        startTracking();
+                    } else {
+                        log('API: Libraries not yet loaded, will track when ready', 'info');
+                    }
+                    return true;
+                } catch (e) {
+                    log(`API Error: ${e.message}`, 'error');
+                    console.error("API Error:", e);
+                    return false;
+                }
+            },
+            getStatus: function() {
+                return {
+                    olLoaded: olLoaded,
+                    satelliteJsLoaded: satelliteJsLoaded,
+                    mapInitialized: mapInitialized,
+                    hasData: satelliteData !== null,
+                    layers: mapObj ? mapObj.getLayers().getLength() : 0
+                };
+            },
+            getPosition: function() {
+                if (!satelliteData) return null;
+                
+                try {
+                    const position = calculateSatellitePosition();
+                    return {
+                        latitude: position.lat,
+                        longitude: position.lng,
+                        height: position.height
+                    };
+                } catch (e) {
+                    log(`API Error getting position: ${e.message}`, 'error');
+                    return null;
+                }
+            }
+        };
+        
+        // Initialize the tracker when scripts are loaded
+        function initializeTracker() {
+            // Check if libraries loaded
+            checkLibraries();
+            
+            // Immediately log satellite data status
+            log(`Satellite data check: ${satelliteData ? 'Available' : 'Not available'}`, 'info');
+            console.log("Current satelliteData:", satelliteData);
+            
+            // Initialize map if libraries are available
+            if (olLoaded && satelliteJsLoaded) {
+                initMap();
+                
+                // If we already have satellite data, start tracking
+                if (satelliteData) {
+                    log(`Starting tracking with existing data: ${satelliteData.name}`, 'success');
+                    startTracking();
+                } else if (window === window.parent) {
+                    // If we're in standalone mode, use test data
+                    log('Running in standalone mode, using test data', 'info');
+                    
+                    satelliteData = {
+                        name: "ISS (ZARYA)",
+                        line1: "1 25544U 98067A   21336.70242088  .00005321  00000+0  10299-3 0  9991",
+                        line2: "2 25544  51.6423 126.9754 0004283  46.9255  83.3408 15.49512648314116"
+                    };
+                    
+                    console.log("Set default test data:", satelliteData);
+                    startTracking();
+                } else {
+                    log("No satellite data available, waiting for data from parent", 'info');
+                }
+            } else {
+                log("Libraries not fully loaded, waiting before initializing map", 'info');
+            }
+        }
+        
+        // Check if libraries loaded
+        function checkLibraries() {
+            if (typeof ol === 'undefined') {
+                log('ERROR: OpenLayers library not loaded!', 'error');
+                olLoaded = false;
+            } else {
+                log(`OpenLayers v${ol.VERSION || 'unknown'} loaded successfully`, 'success');
+                olLoaded = true;
+            }
+            
+            if (typeof satellite === 'undefined') {
+                log('ERROR: satellite.js library not loaded!', 'error');
+                satelliteJsLoaded = false;
+            } else {
+                log('satellite.js loaded successfully', 'success');
+                satelliteJsLoaded = true;
+            }
+            
+            return olLoaded && satelliteJsLoaded;
+        }
+        
+        // Initialize the map
+        function initMap() {
+            try {
+                log('Initializing map...');
+                
+                // Create OSM layer
+                const osmLayer = new ol.layer.Tile({
+                    source: new ol.source.OSM()
+                });
+                
+                // Create map
+                mapObj = new ol.Map({
+                    target: 'map',
+                    layers: [osmLayer],
+                    view: new ol.View({
+                        center: ol.proj.fromLonLat([0, 0]),
+                        zoom: 2
+                    })
+                });
+                
+                // Create vector source and layer for satellite
+                vectorSource = new ol.source.Vector();
+                const vectorLayer = new ol.layer.Vector({
+                    source: vectorSource,
+                    style: function(feature) {
+                        return new ol.style.Style({
+                            image: new ol.style.Circle({
+                                radius: 6,
+                                fill: new ol.style.Fill({
+                                    color: '#ff0000'
+                                }),
+                                stroke: new ol.style.Stroke({
+                                    color: '#ffffff',
+                                    width: 2
+                                })
+                            }),
+                            text: new ol.style.Text({
+                                text: feature.get('name') || '',
+                                font: '12px Calibri,sans-serif',
+                                fill: new ol.style.Fill({
+                                    color: '#000'
+                                }),
+                                stroke: new ol.style.Stroke({
+                                    color: '#fff',
+                                    width: 3
+                                }),
+                                offsetY: -15
+                            })
+                        });
+                    }
+                });
+                
+                mapObj.addLayer(vectorLayer);
+                
+                // Create satellite feature
+                satelliteFeature = new ol.Feature({
+                    name: 'Satellite',
+                    geometry: new ol.geom.Point(ol.proj.fromLonLat([0, 0]))
+                });
+                
+                // Create path feature
+                pathFeature = new ol.Feature({
+                    geometry: new ol.geom.LineString([])
+                });
+                pathFeature.setStyle(new ol.style.Style({
+                    stroke: new ol.style.Stroke({
+                        color: '#ff0000',
+                        width: 2
+                    })
+                }));
+                
+                // Add features to source
+                vectorSource.addFeature(satelliteFeature);
+                vectorSource.addFeature(pathFeature);
+                
+                log('Map initialized successfully', 'success');
+                mapInitialized = true;
+                return true;
+            } catch (error) {
+                log(`Error initializing map: ${error.message}`, 'error');
+                console.error(error);
+                return false;
+            }
+        }
+        
+        // Start tracking the satellite
+        function startTracking() {
+            try {
+                if (!satelliteData) {
+                    log('No satellite data available', 'error');
+                    return;
+                }
+                
+                log(`Starting to track ${satelliteData.name}...`);
+                
+                // Clear existing interval
+                if (updateInterval) {
+                    clearInterval(updateInterval);
+                }
+                
+                // Set satellite feature name
+                satelliteFeature.set('name', satelliteData.name);
+                
+                // Update satellite position immediately
+                updatePosition();
+                
+                // Set interval for updates (every second)
+                updateInterval = setInterval(updatePosition, 1000);
+                
+                // Send confirmation message to parent
+                try {
+                    window.parent.postMessage({
+                        type: 'tracker_ready',
+                        satellite: satelliteData.name
+                    }, '*');
+                } catch (e) {
+                    console.error('Error sending ready message to parent:', e);
+                }
+                
+            } catch (error) {
+                log(`Error starting tracking: ${error.message}`, 'error');
+            }
+        }
+        
+        // Update satellite position
+        function updatePosition() {
+            try {
+                if (!satelliteData) {
+                    return;
+                }
+                
+                const position = calculateSatellitePosition();
+                if (!position) {
+                    log('Failed to compute satellite position', 'error');
+                    return;
+                }
+                
+                // Log position
+                log(`Position: ${position.lat.toFixed(2)}°, ${position.lng.toFixed(2)}°, ${position.height.toFixed(2)} km`);
+                
+                // Update marker position
+                const olPosition = ol.proj.fromLonLat([position.lng, position.lat]);
+                satelliteFeature.setGeometry(new ol.geom.Point(olPosition));
+                
+                // Update path
+                const pathGeometry = pathFeature.getGeometry();
+                const coordinates = pathGeometry.getCoordinates();
+                coordinates.push(olPosition);
+                
+                // Limit path length
+                if (coordinates.length > 100) {
+                    coordinates.shift();
+                }
+                
+                pathGeometry.setCoordinates(coordinates);
+                
+                // Center map on first update
+                if (coordinates.length === 1) {
+                    mapObj.getView().setCenter(olPosition);
+                }
+                
+                // Send position to parent - wrap in try/catch to prevent errors if parent unavailable
+                try {
+                    window.parent.postMessage({
+                        type: 'position',
+                        latitude: position.lat,
+                        longitude: position.lng,
+                        height: position.height
+                    }, '*');
+                    // console.log("Position sent to parent window");
+                } catch (e) {
+                    console.error("Error sending position to parent:", e);
+                }
+                
+            } catch (error) {
+                log(`Error updating position: ${error.message}`, 'error');
+            }
+        }
+        
+        // Calculate satellite position from TLE data
+        function calculateSatellitePosition() {
+            if (!satelliteData || !satelliteData.line1 || !satelliteData.line2) {
+                return null;
+            }
+            
+            try {
+                // Parse TLE data
+                const satrec = satellite.twoline2satrec(
+                    satelliteData.line1,
+                    satelliteData.line2
+                );
+                
+                // Current time
+                const now = new Date();
+                
+                // Get satellite position
+                const positionAndVelocity = satellite.propagate(satrec, now);
+                if (!positionAndVelocity.position) {
+                    return null;
+                }
+                
+                const positionEci = positionAndVelocity.position;
+                
+                // Convert coordinates
+                const gmst = satellite.gstime(now);
+                const positionGd = satellite.eciToGeodetic(positionEci, gmst);
+                
+                // Get latitude and longitude
+                const longitude = satellite.radiansToDegrees(positionGd.longitude);
+                const latitude = satellite.radiansToDegrees(positionGd.latitude);
+                const height = positionGd.height;
+                
+                return {
+                    lat: latitude,
+                    lng: longitude,
+                    height: height
+                };
+            } catch (error) {
+                console.error('Error calculating position:', error);
+                return null;
+            }
+        }
+        
+        // Make functions and objects available to parent window
+        window.trackerAPI = {
+            checkLibraries: checkLibraries,
+            initMap: initMap,
+            startTracking: startTracking,
+            getStatus: function() {
+                return {
+                    olLoaded: typeof ol !== 'undefined',
+                    satelliteJsLoaded: typeof satellite !== 'undefined',
+                    mapInitialized: mapObj !== null,
+                    hasData: satelliteData !== null,
+                    layers: mapObj ? mapObj.getLayers().getLength() : 0
+                };
+            }
+        };
+    </script>
+</body>
+</html> 

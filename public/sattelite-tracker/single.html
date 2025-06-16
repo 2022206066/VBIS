@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Single Satellite Tracker</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v7.3.0/ol.css" type="text/css">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        #map {
+            width: 100%;
+            height: calc(100% - 220px);
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+        }
+        .info-panel {
+            background-color: #f8f8f8;
+            padding: 10px;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+        }
+        h1 {
+            margin-top: 5px;
+            margin-bottom: 10px;
+            padding-left: 10px;
+        }
+        .data-row {
+            display: flex;
+            margin-bottom: 5px;
+        }
+        .data-label {
+            width: 150px;
+            font-weight: bold;
+        }
+        .data-value {
+            flex: 1;
+        }
+        .btn {
+            display: inline-block;
+            padding: 8px 12px;
+            background-color: #4285f4;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 0 10px;
+        }
+        .btn:hover {
+            background-color: #3367d6;
+        }
+        .button-container {
+            padding: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Single Satellite Tracker</h1>
+    
+    <div class="info-panel">
+        <div class="data-row">
+            <div class="data-label">Satellite Name:</div>
+            <div class="data-value" id="sat-name">Loading...</div>
+        </div>
+        <div class="data-row">
+            <div class="data-label">Current Position:</div>
+            <div class="data-value" id="sat-position">Loading...</div>
+        </div>
+        <div class="data-row">
+            <div class="data-label">Altitude:</div>
+            <div class="data-value" id="sat-altitude">Loading...</div>
+        </div>
+        <div class="data-row">
+            <div class="data-label">Last Updated:</div>
+            <div class="data-value" id="last-update">Loading...</div>
+        </div>
+    </div>
+    
+    <div id="map"></div>
+    
+    <!-- Button removed as it was causing issues and is redundant with main navbar -->
+    
+    <script src="res/tles.js"></script>
+    <script src="node_modules/satellite.js/dist/satellite.min.js" onerror="loadFallback()"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ol@v7.3.0/dist/ol.js"></script>
+    <script src="js/parse.js"></script>
+    
+    <script>
+        // Fallback for satellite.js if local file fails
+        function loadFallback() {
+            console.log("Local satellite.js failed to load, using CDN fallback");
+            var fallbackScript = document.createElement('script');
+            fallbackScript.src = 'https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js';
+            document.head.appendChild(fallbackScript);
+        }
+        
+        // Get satellite name from URL parameter
+        function getQueryParam(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+        
+        let map, marker;
+        const satName = getQueryParam('name') || "ISS (ZARYA)";
+        let lastPosition = null;
+        
+        // Initialize map
+        function initMap() {
+            map = new ol.Map({
+                target: 'map',
+                layers: [
+                    new ol.layer.Tile({
+                        source: new ol.source.OSM()
+                    })
+                ],
+                view: new ol.View({
+                    center: [0, 0],
+                    zoom: 3
+                })
+            });
+            
+            // Create vector layer for satellite
+            const vectorSource = new ol.source.Vector();
+            const vectorLayer = new ol.layer.Vector({
+                source: vectorSource
+            });
+            map.addLayer(vectorLayer);
+            
+            // Create marker
+            const feature = new ol.Feature({
+                geometry: new ol.geom.Point([0, 0])
+            });
+            
+            // Style for the satellite marker
+            feature.setStyle(new ol.style.Style({
+                image: new ol.style.Circle({
+                    radius: 6,
+                    fill: new ol.style.Fill({
+                        color: '#ff0000'
+                    }),
+                    stroke: new ol.style.Stroke({
+                        color: '#ffffff',
+                        width: 2
+                    })
+                })
+            }));
+            
+            vectorSource.addFeature(feature);
+            marker = feature;
+            
+            // Update satellite info
+            document.getElementById('sat-name').textContent = satName;
+        }
+        
+        // Update satellite position
+        function updatePosition() {
+            try {
+                const pos = getCurrentLatLong(satName);
+                if (!pos) {
+                    console.error("Could not get position for satellite:", satName);
+                    return;
+                }
+                
+                lastPosition = pos;
+                
+                // Update map marker
+                const lonLat = [pos.long, pos.lat]; 
+                const position = ol.proj.fromLonLat(lonLat);
+                marker.getGeometry().setCoordinates(position);
+                
+                // Center map on satellite
+                map.getView().setCenter(position);
+                
+                // Update info panel
+                document.getElementById('sat-position').textContent = `Lat: ${pos.lat.toFixed(4)}°, Long: ${pos.long.toFixed(4)}°`;
+                document.getElementById('sat-altitude').textContent = `${pos.height.toFixed(2)} km`;
+                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+            } catch (e) {
+                console.error("Error updating satellite position:", e);
+            }
+        }
+        
+        // Initialize when everything is loaded
+        window.onload = function() {
+            if (!tleArr || !Array.isArray(tleArr)) {
+                console.error("TLE data not loaded correctly!");
+                document.getElementById('sat-name').textContent = "Error: TLE data not loaded";
+                return;
+            }
+            
+            // Check if satellite exists in data
+            let satelliteExists = false;
+            for (const tle of tleArr) {
+                if (tle.name === satName) {
+                    satelliteExists = true;
+                    break;
+                }
+            }
+            
+            if (!satelliteExists) {
+                document.getElementById('sat-name').textContent = "Error: Satellite not found in data";
+                return;
+            }
+            
+            // Initialize map and start tracking
+            initMap();
+            updatePosition();
+            setInterval(updatePosition, 1000);
+        };
+    </script>
+</body>
+</html> 

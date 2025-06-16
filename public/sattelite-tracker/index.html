@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js"> <!--<![endif]-->
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Satellite Tracker</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v7.3.0/ol.css" type="text/css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+
+    <!-- Load TLE data - use either static file (default) or database data -->
+    <script src="res/tles.js"></script>
+    <!-- Uncomment to use database data instead:
+    <script src="db-tles.php"></script>
+    -->
+    
+    <script src="node_modules/satellite.js/dist/satellite.min.js"></script>
+    <!-- Fallback for satellite.js if local file fails -->
+    <script>
+      if (typeof satellite === 'undefined') {
+        console.log("Local satellite.js failed to load, using CDN fallback");
+        var fallbackScript = document.createElement('script');
+        fallbackScript.src = 'https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js';
+        document.head.appendChild(fallbackScript);
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/ol@v7.3.0/dist/ol.js"></script>
+  </head>
+  <body>
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-md-9">
+          <div class="map" id="map"></div>
+        </div>
+        <div class="col-md-3">
+          <div class="controls p-3">
+            <h4>Satellite Tracker</h4>
+            <p class="text-muted">Tracking <span id="satellite-count">0</span> satellites</p>
+            
+            <div class="mb-3">
+              <label for="category-filter" class="form-label">Filter by Category:</label>
+              <select class="form-select" id="category-filter">
+                <option value="">All Categories</option>
+                <option value="Weather">Weather</option>
+                <option value="Navigation">Navigation</option>
+                <option value="Communication">Communication</option>
+                <option value="Earth Observation">Earth Observation</option>
+                <option value="Space Station">Space Station</option>
+                <option value="Scientific">Scientific</option>
+              </select>
+            </div>
+            
+            <div class="mb-3">
+              <label for="search-input" class="form-label">Search:</label>
+              <input type="text" class="form-control" id="search-input" placeholder="Satellite name...">
+            </div>
+            
+            <button id="apply-filters" class="btn btn-primary">Apply Filters</button>
+            <button id="reset-filters" class="btn btn-secondary">Reset</button>
+            
+            <hr>
+            
+            <div class="mb-3">
+              <label for="selected-satellite" class="form-label">Selected Satellite:</label>
+              <div id="selected-satellite-info">
+                <p>No satellite selected</p>
+              </div>
+            </div>
+            
+            <a href="../satellites" class="btn btn-outline-primary">Satellite Database</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <script src="js/parse.js"></script>
+    <script src="js/index.js" async defer></script>
+    
+    <script>
+      // Define satelliteCount variable based on TLE array length
+      const satelliteCount = tleArr ? tleArr.length : 0;
+      // Update the satellite count display
+      document.getElementById('satellite-count').textContent = satelliteCount || 0;
+      
+      // Handle filter application
+      document.getElementById('apply-filters').addEventListener('click', function() {
+        const category = document.getElementById('category-filter').value;
+        const search = document.getElementById('search-input').value;
+        
+        // Reload the page with filters
+        let url = 'index.html';
+        const params = [];
+        
+        if (category) params.push('category=' + encodeURIComponent(category));
+        if (search) params.push('search=' + encodeURIComponent(search));
+        
+        if (params.length > 0) {
+          url = 'db-tles.php?' + params.join('&');
+          
+          // Fetch the filtered data
+          fetch(url)
+            .then(response => response.text())
+            .then(data => {
+              // Execute the JavaScript response to update the tles variable
+              eval(data);
+              
+              // Reinitialize the satellite tracking
+              tleArr = parseTles(tles);
+              drawAllSatellites();
+              
+              // Update the count
+              document.getElementById('satellite-count').textContent = satelliteCount || 0;
+            })
+            .catch(error => {
+              console.error('Error fetching filtered data:', error);
+            });
+        }
+      });
+      
+      // Handle filter reset
+      document.getElementById('reset-filters').addEventListener('click', function() {
+        window.location.href = 'index.html';
+      });
+    </script>
+  </body>
+</html>

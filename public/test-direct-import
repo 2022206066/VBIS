@@ -1,0 +1,201 @@
+<?php
+// Super simple script to import satellites directly without complex code paths
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// Required classes
+require_once __DIR__ . '/../core/Database.php';
+
+// Function to output errors and exit
+function error_exit($message) {
+    echo '<div style="color: red; font-weight: bold; padding: 10px; border: 1px solid red; margin: 10px;">';
+    echo $message;
+    echo '</div>';
+    echo '<a href="/VBIS-main/public/satellites">Return to Satellites</a>';
+    exit;
+}
+
+// Function to sanitize input
+function sanitize($input) {
+    return htmlspecialchars($input, ENT_QUOTES, 'UTF-8');
+}
+
+// Start HTML output
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Direct Satellite Import</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        pre { background: #f4f4f4; padding: 10px; border: 1px solid #ddd; }
+        textarea { width: 100%; height: 200px; margin: 10px 0; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        select { padding: 5px; width: 200px; }
+        button { padding: 8px 15px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background: #45a049; }
+    </style>
+</head>
+<body>
+    <h1>Direct Satellite Import</h1>
+    
+    <?php
+    // Start session to get user info
+    session_start();
+    if (!isset($_SESSION['user']) || !isset($_SESSION['user'][0]['id'])) {
+        error_exit("You must be logged in to use this feature.");
+    }
+    
+    $userId = $_SESSION['user'][0]['id'];
+    echo "<p>User ID: $userId</p>";
+    
+    try {
+        // Connect to database
+        $db = new app\core\Database();
+        $conn = $db->getConnection();
+        
+        // Get available categories for dropdown
+        $categories = [];
+        $catQuery = "SELECT DISTINCT category FROM satellites ORDER BY category";
+        $catResult = $conn->query($catQuery);
+        while ($row = $catResult->fetch_assoc()) {
+            $categories[] = $row['category'];
+        }
+        
+        // Handle form submission
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['tleData'])) {
+            $tleData = trim($_POST['tleData']);
+            $selectedCategory = isset($_POST['category']) ? $_POST['category'] : 'Uncategorized';
+            
+            if (empty($tleData)) {
+                echo "<p class='error'>No TLE data provided.</p>";
+            } else {
+                // Parse TLE data
+                $lines = explode("\n", $tleData);
+                $satellites = [];
+                $current = null;
+                
+                // Simple TLE parser
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if (empty($line)) continue;
+                    
+                    if (substr($line, 0, 2) === "1 " || substr($line, 0, 1) === "1") {
+                        if ($current !== null) {
+                            $current['line1'] = $line;
+                        }
+                    } else if (substr($line, 0, 2) === "2 " || substr($line, 0, 1) === "2") {
+                        if ($current !== null) {
+                            $current['line2'] = $line;
+                            if (isset($current['name']) && isset($current['line1'])) {
+                                $satellites[] = $current;
+                            }
+                            $current = null;
+                        }
+                    } else {
+                        // New satellite name
+                        if ($current !== null && isset($current['name']) && isset($current['line1'])) {
+                            $satellites[] = $current;
+                        }
+                        $current = ['name' => $line];
+                    }
+                }
+                
+                // Add the last satellite if complete
+                if ($current !== null && isset($current['name']) && isset($current['line1']) && isset($current['line2'])) {
+                    $satellites[] = $current;
+                }
+                
+                if (empty($satellites)) {
+                    echo "<p class='error'>No valid satellites found in TLE data.</p>";
+                } else {
+                    echo "<p>Found " . count($satellites) . " satellites to import:</p>";
+                    $successCount = 0;
+                    $errorCount = 0;
+                    
+                    foreach ($satellites as $satellite) {
+                        $name = $satellite['name'];
+                        $line1 = $satellite['line1'];
+                        $line2 = $satellite['line2'];
+                        
+                        // Check if satellite already exists
+                        $checkStmt = $conn->prepare("SELECT id FROM satellites WHERE name = ?");
+                        $checkStmt->bind_param("s", $name);
+                        $checkStmt->execute();
+                        $result = $checkStmt->get_result();
+                        
+                        if ($result->num_rows > 0) {
+                            // Update existing satellite
+                            $row = $result->fetch_assoc();
+                            $id = $row['id'];
+                            
+                            $updateStmt = $conn->prepare("UPDATE satellites SET line1 = ?, line2 = ?, category = ?, added_by = ? WHERE id = ?");
+                            $updateStmt->bind_param("sssii", $line1, $line2, $selectedCategory, $userId, $id);
+                            
+                            if ($updateStmt->execute()) {
+                                echo "<p class='success'>Updated: " . sanitize($name) . "</p>";
+                                $successCount++;
+                            } else {
+                                echo "<p class='error'>Error updating " . sanitize($name) . ": " . $conn->error . "</p>";
+                                $errorCount++;
+                            }
+                        } else {
+                            // Insert new satellite
+                            $insertStmt = $conn->prepare("INSERT INTO satellites (name, line1, line2, category, added_by) VALUES (?, ?, ?, ?, ?)");
+                            $insertStmt->bind_param("ssssi", $name, $line1, $line2, $selectedCategory, $userId);
+                            
+                            if ($insertStmt->execute()) {
+                                echo "<p class='success'>Added: " . sanitize($name) . "</p>";
+                                $successCount++;
+                            } else {
+                                echo "<p class='error'>Error adding " . sanitize($name) . ": " . $conn->error . "</p>";
+                                $errorCount++;
+                            }
+                        }
+                    }
+                    
+                    echo "<p>Import complete: $successCount successful, $errorCount failed</p>";
+                }
+            }
+        }
+    } catch (Exception $e) {
+        error_exit("Error: " . $e->getMessage());
+    }
+    ?>
+    
+    <h2>Import TLE Data</h2>
+    <form method="post">
+        <div class="form-group">
+            <label for="category">Category:</label>
+            <select name="category" id="category">
+                <?php foreach ($categories as $category): ?>
+                <option value="<?= sanitize($category) ?>"><?= sanitize($category) ?></option>
+                <?php endforeach; ?>
+                <option value="Uncategorized">Uncategorized</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="tleData">Paste TLE Data:</label>
+            <textarea name="tleData" id="tleData" placeholder="Paste satellite TLE data here..."></textarea>
+        </div>
+        
+        <button type="submit">Import Satellites</button>
+    </form>
+    
+    <h3>Example Format:</h3>
+    <pre>
+ISS (ZARYA)
+1 25544U 98067A   24151.47000012  .00012132  00000+0  22188-3 0  9990
+2 25544  51.6414 190.8578 0003734 307.6907  52.3651 15.50441201434669
+NOAA 19
+1 33591U 09005A   24151.77064815  .00000121  00000+0  81405-4 0  9993
+2 33591  99.1620 119.4740 0014654 141.3229 218.9145 14.12568775783304
+    </pre>
+    
+    <p><a href="/VBIS-main/public/satellites">Return to Satellites</a></p>
+</body>
+</html> 
