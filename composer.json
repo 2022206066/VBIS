@@ -1,0 +1,14 @@
+{
+    "name": "satellite-tracker/vbis",
+    "description": "Satellite Tracker Information System",
+    "type": "project",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "app\\": "./"
+        }
+    },
+    "require": {
+        "php": ">=7.4.0"
+    }
+} 
