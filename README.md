@@ -219,10 +219,6 @@ For large data imports:
    memory_limit = 256M
    ```
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## External Tools and Libraries
 
 This project utilizes the following external resources:
@@ -233,3 +229,8 @@ This project utilizes the following external resources:
 - [Chart.js](https://www.chartjs.org/) - JavaScript charting library for data visualization
 - [Bootstrap](https://getbootstrap.com/) - Frontend framework for responsive UI components
 - [jQuery](https://jquery.com/) - JavaScript library for DOM manipulation
+
+## License
+
+This project is licensed under the GNU GPL v3 License - see the LICENSE file for details.
+Portions of the project sourced externally are licensed under the MIT License - see the LICENSE.OLD file for details.
